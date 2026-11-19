@@ -304,8 +304,8 @@ end
 
 % Texto a voz con .NET (Windows). En otros sistemas solo imprime.
 function hablar(usar, txt)
-    if ~usar, return; end
     persistent sintetizador
+    if ~usar, return; end
     try
         if isempty(sintetizador)
             NET.addAssembly("System.Speech");
