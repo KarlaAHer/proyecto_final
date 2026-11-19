@@ -7,16 +7,16 @@
 //
 // Entradas fisicas:
 //   KEY[0]  reset (activo en bajo)
-//   KEY[1]  NEXT de la tarjeta (en paralelo con NEXT_N externo)
+//   KEY[1]  NEXT (boton de la tarjeta, activo en bajo)
 //   SW[1:0] selector de modo: 00 = PC, 01 = lectura,
 //           10 = escritura, 11 = practica
-//   DOT_N[5:0] botones de los puntos 1..6 (activos en bajo,
+//   DOT_N[5:0] botones externos de los puntos 1..6 (a GND,
 //           con pull-up; DOT_N[0] = punto 1)
 //
 // Salidas:
 //   SERVO[5:0] PWM de los puntos 1..6 (SERVO[0] = punto 1)
 //   LEDR[5:0]  patron en la celda (escritura: ultimo acorde)
-//   LEDR[7:6]  modo, LEDR[9:8] botones NEXT / TX activo
+//   LEDR[7:6]  modo, LEDR[8] NEXT presionado, LEDR[9] TX activo
 //   HEX5 modo (1/2/3), HEX3-HEX2 aciertos, HEX1-HEX0 errores (hex)
 //====================================================
 
@@ -33,13 +33,12 @@ module braille_top #(
 )(
     input  wire       CLOCK_50,
     input  wire [1:0] KEY,
-    input  wire [9:0] SW,
+    input  wire [1:0] SW,
 
     input  wire       UART_RX,
     output wire       UART_TX,
 
     input  wire [5:0] DOT_N,
-    input  wire       NEXT_N,
 
     output wire [5:0] SERVO,
 
@@ -114,7 +113,7 @@ module braille_top #(
     wire [6:0] btn_pressed;
     wire [6:0] btn_pulse;
 
-    // bit 6 = NEXT (externo o KEY[1]); bits 5..0 = puntos 6..1
+    // bit 6 = NEXT (KEY[1]); bits 5..0 = puntos 6..1
     button_conditioner #(
         .N_BUTTONS     (7),
         .DEBOUNCE_COUNT(DEBOUNCE_COUNT),
@@ -122,7 +121,7 @@ module braille_top #(
     ) BTN0 (
         .clk            (clk),
         .rst            (rst),
-        .buttons_n      ({NEXT_N & KEY[1], DOT_N}),
+        .buttons_n      ({KEY[1], DOT_N}),
         .buttons_pressed(btn_pressed),
         .press_pulse    (btn_pulse)
     );

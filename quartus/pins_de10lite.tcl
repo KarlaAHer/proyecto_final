@@ -4,17 +4,20 @@
 # Uso en Quartus: Tools > Tcl Scripts... > Run  (con el proyecto abierto)
 #   o:  quartus_sh -t quartus/pins_de10lite.tcl
 #
-# IMPORTANTE: verificar contra el DE10-Lite User Manual (tablas de
-# pines) o el DE10-Lite System Builder antes de programar la tarjeta.
+# Pines verificados contra el DE10-Lite User Manual (Terasic, 5/jun/2020),
+# tablas 3-2 a 3-7.
 #
-# Conexiones externas en el header GPIO 2x20 (3.3 V):
-#   GPIO_0  UART_RX  <- TX del FT232RL / HC-05 (modo 3.3 V)
-#   GPIO_1  UART_TX  -> RX del FT232RL / HC-05
-#   GPIO_2..7   SERVO[0..5]  (senal PWM de los puntos 1..6)
-#   GPIO_8..13  DOT_N[0..5]  (botones de los puntos 1..6 a GND)
-#   GPIO_14     NEXT_N       (boton NEXT a GND)
+# Controles de la tarjeta:
+#   KEY0 = reset, KEY1 = NEXT, SW1..SW0 = modo
+#
+# Conexiones externas en el header GPIO 2x20 (JP1, 3.3 V):
+#   GPIO_0  (pin 1)  UART_RX  <- TX del FT232RL / HC-05 (modo 3.3 V)
+#   GPIO_1  (pin 2)  UART_TX  -> RX del FT232RL / HC-05
+#   GPIO_2..7  (pines 3..8)          SERVO[0..5]  PWM de los puntos 1..6
+#   GPIO_8..13 (pines 9,10,13..16)   DOT_N[0..5]  botones a GND
+#   pin 12 / 30 = GND, pin 29 = 3.3 V, pin 11 = 5 V
 # Los botones usan el pull-up interno; los servos se alimentan con
-# una fuente de 5 V externa con GND comun con la FPGA.
+# una fuente de 5 V EXTERNA con GND comun con la FPGA.
 # =====================================================================
 
 set_global_assignment -name TOP_LEVEL_ENTITY braille_top
@@ -39,14 +42,6 @@ set_location_assignment PIN_B8  -to KEY[0]
 set_location_assignment PIN_A7  -to KEY[1]
 set_location_assignment PIN_C10 -to SW[0]
 set_location_assignment PIN_C11 -to SW[1]
-set_location_assignment PIN_D12 -to SW[2]
-set_location_assignment PIN_C12 -to SW[3]
-set_location_assignment PIN_A12 -to SW[4]
-set_location_assignment PIN_B12 -to SW[5]
-set_location_assignment PIN_A13 -to SW[6]
-set_location_assignment PIN_A14 -to SW[7]
-set_location_assignment PIN_B14 -to SW[8]
-set_location_assignment PIN_F15 -to SW[9]
 
 # --- LEDs ------------------------------------------------------------
 set_location_assignment PIN_A8  -to LEDR[0]
@@ -90,12 +85,13 @@ set_location_assignment PIN_W5  -to DOT_N[2]
 set_location_assignment PIN_AA15 -to DOT_N[3]
 set_location_assignment PIN_AA14 -to DOT_N[4]
 set_location_assignment PIN_W13 -to DOT_N[5]
-set_location_assignment PIN_W12 -to NEXT_N
 
 # Pull-ups internos en las entradas externas
-foreach s {UART_RX NEXT_N DOT_N[0] DOT_N[1] DOT_N[2] DOT_N[3] DOT_N[4] DOT_N[5]} {
+foreach s {UART_RX DOT_N[0] DOT_N[1] DOT_N[2] DOT_N[3] DOT_N[4] DOT_N[5]} {
     set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to $s
 }
 
-# Todo el banco en 3.3 V LVTTL
+# Todo en 3.3 V LVTTL, salvo los KEY (Schmitt trigger segun el manual)
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
+set_instance_assignment -name IO_STANDARD "3.3 V SCHMITT TRIGGER" -to KEY[0]
+set_instance_assignment -name IO_STANDARD "3.3 V SCHMITT TRIGGER" -to KEY[1]

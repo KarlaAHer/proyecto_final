@@ -20,11 +20,10 @@ module braille_top_tb;
 
     reg        clk = 0;
     reg  [1:0] KEY = 2'b10;   // reset activo
-    reg  [9:0] SW  = 10'd0;
+    reg  [1:0] SW  = 2'd0;
     reg        UART_RX = 1'b1;
     wire       UART_TX;
     reg  [5:0] DOT_N  = 6'b111111;
-    reg        NEXT_N = 1'b1;
     wire [5:0] SERVO;
     wire [9:0] LEDR;
     wire [7:0] HEX0, HEX1, HEX2, HEX3, HEX4, HEX5;
@@ -42,7 +41,7 @@ module braille_top_tb;
     ) dut (
         .CLOCK_50(clk), .KEY(KEY), .SW(SW),
         .UART_RX(UART_RX), .UART_TX(UART_TX),
-        .DOT_N(DOT_N), .NEXT_N(NEXT_N),
+        .DOT_N(DOT_N),
         .SERVO(SERVO), .LEDR(LEDR),
         .HEX0(HEX0), .HEX1(HEX1), .HEX2(HEX2),
         .HEX3(HEX3), .HEX4(HEX4), .HEX5(HEX5)
@@ -178,8 +177,8 @@ module braille_top_tb;
 
     task press_next;
         begin
-            NEXT_N = 1'b0; repeat (DEB * 3) @(posedge clk);
-            NEXT_N = 1'b1; repeat (DEB * 3) @(posedge clk);
+            KEY[1] = 1'b0; repeat (DEB * 3) @(posedge clk);
+            KEY[1] = 1'b1; repeat (DEB * 3) @(posedge clk);
         end
     endtask
 
