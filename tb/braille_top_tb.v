@@ -22,7 +22,7 @@ module braille_top_tb;
 
     reg        clk = 0;
     reg  [1:0] KEY = 2'b10;   // reset activo
-    reg  [1:0] SW  = 2'd0;
+    reg  [2:0] SW  = 3'd0;
     reg        UART_RX = 1'b1;
     wire       UART_TX;
     reg  [5:0] DOT_N  = 6'b111111;
@@ -41,7 +41,9 @@ module braille_top_tb;
         .PULSE_UP_L    (P_UP),
         .PULSE_DOWN_R  (R_DOWN),
         .PULSE_UP_R    (R_UP),
-        .SERVO_WIDTH   (10)
+        .SERVO_WIDTH   (10),
+        .FEEDBACK_DELAY(5000),
+        .FB_WIDTH      (13)
     ) dut (
         .CLOCK_50(clk), .KEY(KEY), .SW(SW),
         .UART_RX(UART_RX), .UART_TX(UART_TX),
@@ -225,9 +227,34 @@ module braille_top_tb;
     endtask
 
 
+    // Espera una linea "T<c>" y devuelve la letra
+    task get_target(output [7:0] c);
+        integer t;
+        begin
+            t = 0;
+            while (n_lines <= rd_ptr && t < 40000) begin
+                @(posedge clk); t = t + 1;
+            end
+            if (n_lines <= rd_ptr || lines[rd_ptr][15:8] !== "T") begin
+                $display("FALLA: se esperaba T<c>, llego \"%0s\"", lines[rd_ptr]);
+                errors = errors + 1;
+                c = "a";
+            end
+            else begin
+                c = lines[rd_ptr][7:0];
+                $display("  ok   <- \"%0s\"  (letra aleatoria de la FPGA)", lines[rd_ptr]);
+            end
+            if (n_lines > rd_ptr) rd_ptr = rd_ptr + 1;
+            repeat (4) @(posedge clk);
+        end
+    endtask
+
     //====================================================
     // SECUENCIA DE PRUEBA
     //====================================================
+
+    reg [7:0] tgt, tgt2;
+    reg [5:0] pat, wrong;
 
     initial begin
         repeat (10) @(posedge clk);
@@ -235,7 +262,15 @@ module braille_top_tb;
         repeat (10) @(posedge clk);
 
         //------------------------------------------------
-        $display("\n== A. MODO LECTURA ==");
+        $display("\n== REPOSO (SW = 00) ==");
+        send_line("Q");        expect_line("MI");
+        send_line("RHOLA");    expect_line("!M");     // no esta en lectura
+        press_chord(6'b000001); expect_silence;
+        press_next;             expect_silence;
+
+        //------------------------------------------------
+        $display("\n== A. MODO LECTURA (SW = 01) ==");
+        SW[1:0] = 2'b01;       expect_line("MR");
         send_line("RCASA");
         expect_line("DC");
         expect_cell(6'b001001);           // c = puntos 1,4
@@ -251,12 +286,13 @@ module braille_top_tb;
         send_line("S");                    // consulta no pierde la posicion
         expect_line("S0000");
         press_next;  expect_line("Do");
+        press_chord(6'b000001); expect_silence;   // lectura ignora acordes
 
         //------------------------------------------------
-        $display("\n== B. MODO ESCRITURA ==");
-        send_line("W");
-        expect_line("MW");
+        $display("\n== B. MODO ESCRITURA (SW = 10) ==");
+        SW[1:0] = 2'b10;       expect_line("MW");
         expect_cell(6'b000000);
+        send_line("Rhola");    expect_line("!M");
         press_chord(6'b000111); expect_line("Kl");   // l = 123
         press_chord(6'b001010); expect_line("Ki");   // i = 24
         press_chord(6'b000011); expect_line("Kb");   // b = 12
@@ -265,41 +301,50 @@ module braille_top_tb;
         press_next;             expect_line("K ");   // espacio
         press_chord(6'b111011); expect_line({"K", 8'hF1}); // n tilde
         press_chord(6'b100000); expect_line("K?");   // solo punto 6: invalido
-        press_chord(6'b000111);                       // l y d se teclean seguido
+        press_chord(6'b000111);                       // l y d seguidas
         press_chord(6'b011001);
         expect_line("Kl");
         expect_line("Kd");
 
         //------------------------------------------------
-        $display("\n== C. MODO PRACTICA ==");
-        send_line("C");        expect_line("S0000");
-        send_line("Pc");       expect_line("Tc");
-        expect_cell(6'b000000);                       // sin pista
-        press_chord(6'b001001); expect_line("Oc0100"); // acierto
-        expect_cell(6'b001001);                       // retroalimentacion
-        press_chord(6'b001001); expect_line("!T");    // ya no hay objetivo
-        send_line("Hz");       expect_line("Tz");
-        expect_cell(6'b110101);                       // con pista
-        press_chord(6'b010101); expect_line("Xo0101"); // error (tecleo o)
-        send_line("Pm");       expect_line("Tm");
-        press_chord(6'b001101); expect_line("Om0201");
-        press_next;            expect_line("N");      // pide otra letra
-        send_line("P7");       expect_line("!U");     // no soportado
-        send_line("S");        expect_line("S0201");
-        if (HEX2[6:0] !== 7'b0100100 || HEX0[6:0] !== 7'b1111001) begin
+        $display("\n== C. MODO PRACTICA (SW = 11), todo en la FPGA ==");
+        SW[1:0] = 2'b11;       expect_line("MP");
+        get_target(tgt);                              // primera letra
+        pat = dut.CTRL0.lut_pattern;
+        expect_cell(6'b000000);                       // SW2 = 0: sin pista
+        press_chord(pat);       expect_line({"O", tgt, "0100"});   // acierto
+        expect_cell(pat);                             // retroalimentacion
+        press_chord(pat);       expect_silence;       // ignorado durante la pausa
+        get_target(tgt2);                             // la FPGA avanza sola
+        if (tgt2 == tgt) begin
+            $display("FALLA: letra repetida"); errors = errors + 1;
+        end
+        pat = dut.CTRL0.lut_pattern;
+        SW[2] = 1'b1;                                 // pista encendida
+        expect_cell(pat);
+        wrong = (tgt2 == "a") ? 6'b000011 : 6'b000001;  // b o a
+        press_chord(wrong);
+        expect_line({"X", (tgt2 == "a") ? "b" : "a", "0101"});    // error
+        get_target(tgt);
+        press_next;                                   // saltar letra
+        get_target(tgt2);
+        send_line("S");        expect_line("S0101");
+        SW[2] = 1'b0;
+        if (HEX2[6:0] !== 7'b1111001 || HEX0[6:0] !== 7'b1111001) begin
             $display("FALLA: displays de marcador"); errors = errors + 1;
-        end else $display("  ok   HEX muestra 02 / 01");
+        end else $display("  ok   HEX muestra 01 / 01");
 
         //------------------------------------------------
-        $display("\n== SELECTOR DE MODO Y ERRORES ==");
-        SW[1:0] = 2'b10;       expect_line("MW");
-        press_chord(6'b000001); expect_line("Ka");
-        SW[1:0] = 2'b00;       expect_silence;        // 00 = control por PC
-        send_line("Pb");       expect_line("Tb");     // el PC sigue mandando
+        $display("\n== CAMBIOS DE MODO Y ERRORES ==");
+        SW[1:0] = 2'b00;       expect_line("MI");
+        expect_cell(6'b000000);
+        SW[1:0] = 2'b11;       expect_line("MP");     // sesion nueva
+        get_target(tgt);
+        send_line("S");        expect_line("S0000");  // marcador borrado
         SW[1:0] = 2'b01;       expect_line("MR");
-        press_chord(6'b000001); expect_silence;       // lectura ignora acordes
-        send_line("Q");        expect_line("MR");     // consulta de modo
-        send_line("Z");        expect_line("!U");
+        send_line("Q");        expect_line("MR");
+        send_line("W");        expect_line("!U");     // el PC ya no cambia modos
+        send_line("Pa");       expect_line("!U");
         UART_RX = 1'b1;
         send_byte(8'h0D); send_byte(8'h0A);           // lineas vacias
         expect_silence;

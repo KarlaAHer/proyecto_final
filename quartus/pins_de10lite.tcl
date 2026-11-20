@@ -8,7 +8,7 @@
 # tablas 3-2 a 3-7.
 #
 # Controles de la tarjeta:
-#   KEY0 = reset, KEY1 = NEXT, SW1..SW0 = modo
+#   KEY0 = reset, KEY1 = NEXT, SW1..SW0 = modo, SW2 = pista en practica
 #
 # Conexiones externas en el header GPIO 2x20 (JP1, 3.3 V):
 #   GPIO_0  (pin 1)  UART_RX  <- TX del FT232RL / HC-05 (modo 3.3 V)
@@ -42,6 +42,7 @@ set_location_assignment PIN_B8  -to KEY[0]
 set_location_assignment PIN_A7  -to KEY[1]
 set_location_assignment PIN_C10 -to SW[0]
 set_location_assignment PIN_C11 -to SW[1]
+set_location_assignment PIN_D12 -to SW[2]
 
 # --- LEDs ------------------------------------------------------------
 set_location_assignment PIN_A8  -to LEDR[0]

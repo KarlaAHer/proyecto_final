@@ -8,8 +8,7 @@ The FPGA is the local controller. It talks to the PC/MATLAB over **UART at 9600 
 |---|---|
 | `rtl/` | Synthesizable Verilog (top: `braille_top`) |
 | `tb/` | Testbenches (`braille_top_tb.v` = full system, 3 modes) |
-| `matlab/braille_gui.m` | **MATLAB GUI (recommended):** listens to the serial port in the background, so changing the mode on the board switches the GUI automatically |
-| `matlab/braille_app.m` | Simple console version (menu); does not react to the board's mode switch |
+| `matlab/braille_gui.m` | MATLAB display: passive window that shows/speaks what the FPGA reports; it only sends the word in reading mode |
 | `quartus/` | DE10-Lite pin assignments (`pins_de10lite.tcl`) and `.sdc` |
 | `legacy/` | Previous packet-based modules (0xAA + checksum), kept for reference only |
 
@@ -36,40 +35,34 @@ dot2 o o dot5      bit1 bit4
 dot3 o o dot6      bit2 bit5
 ```
 
-## Operating modes
+## Operating modes (selected ONLY with the board switches)
 
-Select a mode with a PC command or with `SW[1:0]` (`01` reading, `10` writing, `11` practice, `00` PC only). Whichever was used last wins.
+| SW1 SW0 | Mode | What the FPGA does |
+|---|---|---|
+| 00 | Idle | Cell neutral, keypad ignored |
+| 01 | **Reading** | PC sends `R<word>`; the cell shows the first letter; KEY1 (NEXT) advances; `E` at the end |
+| 10 | **Writing** | Chord on the 6 buttons → decoded on the FPGA → `K<c>`; NEXT = space |
+| 11 | **Practice** | The FPGA clears the score, picks a random letter (LFSR) and sends `T<c>`, compares the chord, counts hits/misses, shows the correct pattern for 2 s and picks the next letter by itself. NEXT skips. **SW2 = 1** shows the target on the servos as a hint |
 
-* **A. Reading.** `RCASA\n` → the cell shows `C`. Each NEXT advances to `A`, `S`, `A`. NEXT after the last letter → `E`, and the cell returns to neutral.
-* **B. Writing.** Press a chord (e.g. dots 1+4). On release, the FPGA sends `Kc`. NEXT sends a space (`K `).
-* **C. Practice.** `Pc` sets the target `c` (cell neutral). `Hc` shows the target on the servos as a hint. The next chord is compared with the target:
-  * Match → `O<typed><hits><misses>`.
-  * Mismatch → `X…`.
-
-  After the attempt, the cell shows the correct pattern as tactile feedback. NEXT sends `N` (the PC answers with a new letter).
+The PC never changes the mode; it only displays, speaks and sends the reading text.
 
 ## Protocol (every line ends in `\n`)
 
 | PC → FPGA | Meaning | Reply |
 |---|---|---|
-| `R<text>` | Reading mode, load a word (1–16 chars) | `D<c>` (or `!L` if too long) |
-| `R` / `W` / `P` | Change mode only | `MR` / `MW` / `MP` |
-| `P<c>` / `H<c>` | Practice target without / with a hint | `T<c>` (or `!U`) |
-| `N` | Software NEXT | depends on the mode |
-| `S` | Read the score | `S<hh><mm>` (hex) |
-| `C` | Clear the score | `S0000` |
+| `R<text>` | Load a word (1–16 chars), only in reading mode | `D<c>` (`!L` too long, `!M` not in reading mode) |
 | `Q` | Query the current mode | `M<m>` |
+| `S` / `C` | Read / clear the score | `S<hh><mm>` |
+| `N` | Software NEXT (testing) | depends on the mode |
 
 | FPGA → PC | Meaning |
 |---|---|
+| `M<m>` | Mode from the switches (`I`, `R`, `W`, `P`) |
 | `D<c>` / `E` | Reading: showing `c` / end of word |
 | `K<c>` | Writing: typed character (`?` = invalid pattern, space = NEXT) |
-| `O<c><hh><mm>` / `X<c><hh><mm>` | Practice: hit / miss + counters |
-| `N` | Practice: the user asked for the next letter |
-| `M<m>` | Mode changed from the board switch |
-| `!L` `!U` `!T` | Word too long / unsupported / no practice target |
-
-Everything is printable ASCII, so you can test from any serial terminal before using MATLAB.
+| `T<c>` | Practice: new random target letter |
+| `O<c><hh><mm>` / `X<c><hh><mm>` | Practice: hit / miss + counters (hex) |
+| `!L` `!U` `!M` | Too long / unsupported command / not in reading mode |
 
 ## Hardware notes
 

@@ -1,117 +1,120 @@
 function braille_gui()
 %% =====================================================================
-%  INTERFAZ GRAFICA - SISTEMA BIDIRECCIONAL TEXTO <-> BRAILLE (DE10-Lite)
+%  PANTALLA MATLAB - SISTEMA BIDIRECCIONAL TEXTO <-> BRAILLE (DE10-Lite)
 %
-%  Escucha el puerto serial en segundo plano (callback). Si cambias el
-%  modo con SW1-SW0 en la tarjeta, la FPGA manda M<m> y esta ventana
-%  cambia sola a la pestana de ese modo (practica arranca sola).
-%  Si cambias de pestana aqui, se manda el modo a la FPGA.
+%  Toda la logica esta en la FPGA. El modo se elige SOLO con los
+%  switches de la tarjeta:
+%     SW1 SW0 = 00 reposo, 01 lectura, 10 escritura, 11 practica
+%     SW2     = pista en practica (letra visible en los servos)
+%
+%  Esta ventana solo:
+%     - escucha el puerto serial y muestra lo que reporta la FPGA,
+%     - lo dice en voz alta (Windows),
+%     - en modo lectura, envia la palabra que escribes.
 %
 %  Uso:  braille_gui     (MATLAB R2019b o mas nuevo, sin toolboxes)
-%
 %  Protocolo: ver rtl/braille_controller.v
 %  =====================================================================
 
     BAUD    = 9600;
     MAX_LEN = 16;          % Debe coincidir con MAX_LEN en la FPGA
-    PAUSA   = 1.5;         % s entre letras en practica (retroalimentacion)
 
-    % ---------------- Estado ----------------
-    s      = [];           % objeto serialport
+    s      = [];           % serialport
     rxbuf  = uint8([]);    % bytes recibidos sin procesar
-    modo   = ' ';          % 'R', 'W' o 'P'
-    synth  = [];           % sintetizador de voz
-
-    palabra = '';          % lectura
-    idx     = 0;
-
-    texto    = '';         % escritura
+    synth  = [];           % voz
+    texto  = '';           % escritura
     palabraW = '';
-
-    prac.activa = false;   % practica
-    prac.k      = 0;
-    prac.n      = 10;
-    prac.res    = [];
-    prac.obj    = ' ';
-
-    tmr = timer('StartDelay', PAUSA, 'ExecutionMode', 'singleShot', ...
-                'TimerFcn', @(~, ~) siguienteLetra());
+    histAcc   = [];           % precision tras cada intento (practica)
 
     % ---------------- Ventana ----------------
-    fig = uifigure('Name', 'Braille FPGA', 'Position', [100 80 920 660]);
+    fig = uifigure('Name', 'Braille FPGA', 'Position', [100 80 900 640]);
     fig.CloseRequestFcn = @cerrar;
 
-    g = uigridlayout(fig, [3 1]);
-    g.RowHeight = {36, '1x', 120};
+    g = uigridlayout(fig, [4 1]);
+    g.RowHeight = {34, 50, '1x', 110};
 
     % Fila 1: conexion
-    g1 = uigridlayout(g, [1 7]);
-    g1.ColumnWidth = {55, 110, 34, 100, '1x', 190, 60};
+    g1 = uigridlayout(g, [1 6]);
+    g1.ColumnWidth = {55, 110, 34, 100, '1x', 60};
     g1.Padding = [0 0 0 0];
     uilabel(g1, 'Text', 'Puerto:');
-    ddPort  = uidropdown(g1, 'Items', listaPuertos());
+    ddPort = uidropdown(g1, 'Items', listaPuertos());
     uibutton(g1, 'Text', char(8635), 'Tooltip', 'Actualizar puertos', ...
              'ButtonPushedFcn', @(~, ~) set(ddPort, 'Items', listaPuertos()));
-    btnCon  = uibutton(g1, 'Text', 'Conectar', 'ButtonPushedFcn', @conectar);
-    lblEst  = uilabel(g1, 'Text', 'Desconectado', 'FontColor', [0.75 0 0]);
-    lblModo = uilabel(g1, 'Text', 'Modo: -', 'FontSize', 18, 'FontWeight', 'bold');
-    chkVoz  = uicheckbox(g1, 'Text', 'Voz', 'Value', true);
+    btnCon = uibutton(g1, 'Text', 'Conectar', 'ButtonPushedFcn', @conectar);
+    lblEst = uilabel(g1, 'Text', 'Desconectado', 'FontColor', [0.75 0 0]);
+    chkVoz = uicheckbox(g1, 'Text', 'Voz', 'Value', true);
 
-    % Fila 2: pestanas de modo
-    tg   = uitabgroup(g, 'SelectionChangedFcn', @tabCambiada);
-    tabR = uitab(tg, 'Title', '  Lectura  ');
-    tabW = uitab(tg, 'Title', '  Escritura  ');
-    tabP = uitab(tg, 'Title', '  Practica  ');
+    % Fila 2: modo actual (lo decide la tarjeta)
+    lblModo = uilabel(g, 'Text', 'MODO: -   (se elige con SW1-SW0 en la tarjeta)', ...
+                      'FontSize', 24, 'FontWeight', 'bold', ...
+                      'HorizontalAlignment', 'center');
+
+    % Fila 3: un panel por modo, en la misma celda
+    area = uigridlayout(g, [1 1]);
+    area.Padding = [0 0 0 0];
+
+    % --- Reposo ---
+    pI = uipanel(area, 'BorderType', 'none');
+    gI = uigridlayout(pI, [1 1]);
+    uilabel(gI, 'Text', sprintf(['Mueve los switches de la tarjeta:\n\n' ...
+        'SW1 SW0 = 01  ->  Lectura\nSW1 SW0 = 10  ->  Escritura\n' ...
+        'SW1 SW0 = 11  ->  Practica   (SW2 = pista)']), ...
+        'FontSize', 20, 'HorizontalAlignment', 'center');
 
     % --- Lectura ---
-    gR = uigridlayout(tabR, [3 3]);
+    pR = uipanel(area, 'BorderType', 'none');
+    pR.Layout.Row = 1; pR.Layout.Column = 1;
+    gR = uigridlayout(pR, [3 2]);
     gR.RowHeight   = {34, '1x', 30};
-    gR.ColumnWidth = {'1x', 130, 160};
-    edPal = uieditfield(gR, 'text', 'Placeholder', 'Palabra (max 16)', ...
+    gR.ColumnWidth = {'1x', 150};
+    edPal = uieditfield(gR, 'text', 'Placeholder', 'Palabra a mostrar (max 16)', ...
                         'FontSize', 16);
     uibutton(gR, 'Text', 'Enviar palabra', 'ButtonPushedFcn', @enviarPalabra);
-    uibutton(gR, 'Text', 'Siguiente (NEXT)', 'ButtonPushedFcn', @(~, ~) enviar("N"));
-    lblLetra = uilabel(gR, 'Text', '-', 'FontSize', 140, 'FontWeight', 'bold', ...
+    lblLetra = uilabel(gR, 'Text', '-', 'FontSize', 150, 'FontWeight', 'bold', ...
                        'HorizontalAlignment', 'center');
-    lblLetra.Layout.Row = 2; lblLetra.Layout.Column = [1 3];
-    lblProg = uilabel(gR, 'Text', 'Escribe una palabra y presiona Enviar', ...
-                      'HorizontalAlignment', 'center', 'FontSize', 15);
-    lblProg.Layout.Row = 3; lblProg.Layout.Column = [1 3];
+    lblLetra.Layout.Row = 2; lblLetra.Layout.Column = [1 2];
+    lblProg = uilabel(gR, 'Text', 'Escribe una palabra. Avanza con KEY1 (NEXT) en la tarjeta.', ...
+                      'FontSize', 15, 'HorizontalAlignment', 'center');
+    lblProg.Layout.Row = 3; lblProg.Layout.Column = [1 2];
 
     % --- Escritura ---
-    gW = uigridlayout(tabW, [2 3]);
+    pW = uipanel(area, 'BorderType', 'none');
+    pW.Layout.Row = 1; pW.Layout.Column = 1;
+    gW = uigridlayout(pW, [2 3]);
     gW.RowHeight   = {'1x', 34};
-    gW.ColumnWidth = {'1x', 140, 140};
+    gW.ColumnWidth = {'1x', 140, 110};
     taTexto = uitextarea(gW, 'Editable', 'off', 'FontSize', 34, 'Value', {''});
     taTexto.Layout.Row = 1; taTexto.Layout.Column = [1 3];
-    lblUlt = uilabel(gW, 'Text', 'Escribe con el teclado Braille.  NEXT = espacio', ...
+    lblUlt = uilabel(gW, 'Text', 'Escribe en el teclado Braille. KEY1 (NEXT) = espacio', ...
                      'FontSize', 15);
     uibutton(gW, 'Text', 'Leer en voz alta', 'ButtonPushedFcn', @(~, ~) hablar(texto));
     uibutton(gW, 'Text', 'Borrar', 'ButtonPushedFcn', @borrarTexto);
 
     % --- Practica ---
-    gP = uigridlayout(tabP, [3 6]);
-    gP.RowHeight   = {34, '1x', 30};
-    gP.ColumnWidth = {55, 70, 170, 110, 110, '1.4x'};
-    uilabel(gP, 'Text', 'Letras:');
-    spnN    = uispinner(gP, 'Limits', [1 100], 'Value', 10, 'RoundFractionalValues', 'on');
-    chkPista = uicheckbox(gP, 'Text', 'Mostrar pista en la celda');
-    uibutton(gP, 'Text', 'Iniciar', 'ButtonPushedFcn', @(~, ~) pedirPractica());
-    uibutton(gP, 'Text', 'Detener', 'ButtonPushedFcn', @(~, ~) detenerPractica());
+    pP = uipanel(area, 'BorderType', 'none');
+    pP.Layout.Row = 1; pP.Layout.Column = 1;
+    gP = uigridlayout(pP, [3 2]);
+    gP.RowHeight   = {30, '1x', 34};
+    gP.ColumnWidth = {'1x', '1x'};
+    lblRes = uilabel(gP, 'Text', 'La FPGA elige la letra. KEY1 (NEXT) = saltar. SW2 = pista', ...
+                     'FontSize', 15, 'HorizontalAlignment', 'center');
+    lblRes.Layout.Column = 1;
     ax = uiaxes(gP);
-    ax.Layout.Row = [1 3]; ax.Layout.Column = 6;
+    ax.Layout.Row = [1 3]; ax.Layout.Column = 2;
     title(ax, 'Precision acumulada'); ylabel(ax, '%'); xlabel(ax, 'Intento');
     ylim(ax, [0 100]); grid(ax, 'on');
-    lblObj = uilabel(gP, 'Text', '-', 'FontSize', 140, 'FontWeight', 'bold', ...
+    lblObj = uilabel(gP, 'Text', '-', 'FontSize', 150, 'FontWeight', 'bold', ...
                      'HorizontalAlignment', 'center');
-    lblObj.Layout.Row = 2; lblObj.Layout.Column = [1 5];
+    lblObj.Layout.Row = 2; lblObj.Layout.Column = 1;
     lblStats = uilabel(gP, 'Text', 'Aciertos: 0   Errores: 0   Precision: 0 %', ...
-                       'FontSize', 16, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
-    lblStats.Layout.Row = 3; lblStats.Layout.Column = [1 5];
+                       'FontSize', 17, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+    lblStats.Layout.Row = 3; lblStats.Layout.Column = 1;
 
-    % Fila 3: registro
+    % Fila 4: registro
     taLog = uitextarea(g, 'Editable', 'off', 'FontName', 'Consolas', 'Value', {''});
 
+    mostrarModo('I');
     registrar('Selecciona el puerto y presiona Conectar.');
 
 
@@ -145,8 +148,8 @@ function braille_gui()
         configureCallback(s, "terminator", @alRecibir);
         btnCon.Text = 'Desconectar';
         lblEst.Text = ['Conectado ' ddPort.Value]; lblEst.FontColor = [0 0.5 0];
-        registrar(['Conectado a ' ddPort.Value '. Consultando modo...']);
-        enviar("Q");                         % la FPGA responde M<m>
+        registrar(['Conectado a ' ddPort.Value '.']);
+        enviar("Q");                         % la FPGA responde con su modo
     end
 
     function enviar(txt)
@@ -157,7 +160,7 @@ function braille_gui()
         write(s, [uint8(char(txt)) 10], "uint8");
     end
 
-    % Se ejecuta solo cuando llega un '\n' desde la FPGA
+    % Se ejecuta cuando llega un '\n' desde la FPGA
     function alRecibir(src, ~)
         n = src.NumBytesAvailable;
         if n == 0, return; end
@@ -173,7 +176,7 @@ function braille_gui()
 
 
     %% =================================================================
-    %  MENSAJES DE LA FPGA
+    %  MENSAJES DE LA FPGA (solo se muestran)
     %  =================================================================
     function procesar(m)
         c2 = ' ';
@@ -181,38 +184,49 @@ function braille_gui()
 
         switch char(m(1))
 
-            case 'M'                                 % cambio de modo
-                registrar(['La tarjeta esta en modo ' nombreModo(c2)]);
-                entrarModo(c2);
+            case 'M'                                     % modo (switches)
+                mostrarModo(c2);
+                registrar(['La tarjeta cambio a modo ' nombreModo(c2)]);
+                hablar(['Modo ' lower(nombreModo(c2))]);
 
-            case 'D'                                 % lectura: letra
-                mostrarTab('R');
-                idx = idx + 1;
+            case 'D'                                     % lectura
                 lblLetra.Text = upper(c2);
-                lblProg.Text  = sprintf('Letra %d de %d   (NEXT = siguiente)', ...
-                                        idx, max(idx, numel(palabra)));
+                lblProg.Text  = 'Avanza con KEY1 (NEXT) en la tarjeta.';
                 hablar(c2);
 
-            case 'E'                                 % lectura: fin
+            case 'E'
                 lblLetra.Text = '-';
                 lblProg.Text  = 'Fin de la palabra. Escribe otra.';
                 registrar('Fin de la palabra.');
 
-            case 'K'                                 % escritura
-                mostrarTab('W');
+            case 'K'                                     % escritura
                 letraEscrita(c2);
 
-            case 'T'
-                registrar(['Objetivo: ' c2]);
+            case 'T'                                     % practica: letra nueva
+                lblObj.Text = upper(c2);
+                lblObj.FontColor = [0 0 0];
+                lblRes.Text = 'Escribe esta letra en el teclado Braille';
+                hablar(['Letra ' c2]);
 
-            case {'O', 'X'}                          % practica
-                resultado(char(m(1)) == 'O', c2);
-
-            case 'N'                                 % NEXT en practica
-                if prac.activa
-                    registrar('Letra saltada.');
-                    siguienteLetra();
+            case {'O', 'X'}                              % practica: resultado
+                ok = (m(1) == 'O');
+                h  = hex2dec(char(m(3:4)));
+                e  = hex2dec(char(m(5:6)));
+                acc = 100 * h / max(1, h + e);
+                histAcc(end + 1) = acc;
+                if ok
+                    lblObj.FontColor = [0 0.6 0];
+                    lblRes.Text = 'Correcto!';
+                    hablar('Correcto');
+                else
+                    lblObj.FontColor = [0.8 0 0];
+                    lblRes.Text = sprintf('Incorrecto: escribiste %s', upper(c2));
+                    hablar('Incorrecto');
                 end
+                lblStats.Text = sprintf('Aciertos: %d   Errores: %d   Precision: %.0f %%', h, e, acc);
+                plot(ax, 1:numel(histAcc), histAcc, '-o', 'LineWidth', 1.5);
+                ylim(ax, [0 100]); grid(ax, 'on');
+                registrar(sprintf('%s  (aciertos %d, errores %d)', lblRes.Text, h, e));
 
             case 'S'
                 if numel(m) >= 5
@@ -223,8 +237,7 @@ function braille_gui()
             case '!'
                 switch c2
                     case 'L', registrar('Error: palabra demasiado larga.');
-                    case 'U', registrar('Error: comando o caracter no soportado.');
-                    case 'T', registrar('Sin letra objetivo (inicia la practica).');
+                    case 'M', registrar('Pon la tarjeta en modo lectura (SW1 SW0 = 01).');
                     otherwise, registrar(['Error: ' char(m)]);
                 end
 
@@ -233,33 +246,21 @@ function braille_gui()
         end
     end
 
-    % Entra al modo m ('R', 'W', 'P'), venga de la FPGA o de la pestana
-    function entrarModo(m)
-        if m ~= 'P' && prac.activa
-            detenerPractica();
-        end
-        modo = m;
-        mostrarTab(m);
+    % Muestra el panel del modo que reporto la FPGA
+    function mostrarModo(m)
+        pI.Visible = (m == 'I');
+        pR.Visible = (m == 'R');
+        pW.Visible = (m == 'W');
+        pP.Visible = (m == 'P');
+        lblModo.Text = ['MODO: ' nombreModo(m)];
         switch m
             case 'R'
                 lblLetra.Text = '-';
-                lblProg.Text  = 'Escribe una palabra y presiona Enviar';
-            case 'W'
-                lblUlt.Text = 'Escribe con el teclado Braille.  NEXT = espacio';
-            case 'P'
-                if ~prac.activa
-                    iniciarPractica();               % arranca sola
-                end
-        end
-    end
-
-    function mostrarTab(m)
-        modo = m;
-        lblModo.Text = ['Modo: ' nombreModo(m)];
-        switch m
-            case 'R', tg.SelectedTab = tabR;
-            case 'W', tg.SelectedTab = tabW;
-            case 'P', tg.SelectedTab = tabP;
+            case 'P'                                    % la FPGA borra el marcador
+                histAcc = [];
+                cla(ax); ylim(ax, [0 100]); grid(ax, 'on');
+                lblObj.Text = '-';
+                lblStats.Text = 'Aciertos: 0   Errores: 0   Precision: 0 %';
         end
     end
 
@@ -268,26 +269,13 @@ function braille_gui()
             case 'R', n = 'LECTURA';
             case 'W', n = 'ESCRITURA';
             case 'P', n = 'PRACTICA';
-            otherwise, n = '-';
+            otherwise, n = 'REPOSO';
         end
-    end
-
-    % El usuario cambio de pestana: avisar a la FPGA
-    function tabCambiada(~, ev)
-        if isempty(s), return; end
-        if ev.NewValue == tabR
-            enviar("R");
-        elseif ev.NewValue == tabW
-            enviar("W");
-        else
-            enviar("P");
-        end
-        % La FPGA responde M<m> y entrarModo() hace el resto
     end
 
 
     %% =================================================================
-    %  LECTURA
+    %  LECTURA: lo unico que MATLAB envia es la palabra
     %  =================================================================
     function enviarPalabra(~, ~)
         w = strtrim(edPal.Value);
@@ -296,17 +284,14 @@ function braille_gui()
             uialert(fig, sprintf('Maximo %d caracteres.', MAX_LEN), 'Palabra muy larga');
             return;
         end
-        if prac.activa, detenerPractica(); end
-        palabra = w;
-        idx = 0;
-        mostrarTab('R');
         registrar(['Enviando palabra: ' w]);
+        hablar(w);
         enviar("R" + string(w));
     end
 
 
     %% =================================================================
-    %  ESCRITURA
+    %  ESCRITURA: solo se muestra lo que decodifico la FPGA
     %  =================================================================
     function letraEscrita(c)
         if c == '?'
@@ -330,101 +315,6 @@ function braille_gui()
     function borrarTexto(~, ~)
         texto = ''; palabraW = '';
         taTexto.Value = {''};
-    end
-
-
-    %% =================================================================
-    %  PRACTICA
-    %  =================================================================
-
-    % Boton Iniciar: si la FPGA ya esta en practica arranca; si no,
-    % pide el modo y arrancara al llegar MP.
-    function pedirPractica()
-        if modo == 'P'
-            iniciarPractica();
-        else
-            enviar("P");
-        end
-    end
-
-    function iniciarPractica()
-        stop(tmr);
-        prac.activa = true;
-        prac.n   = spnN.Value;
-        prac.k   = 0;
-        prac.res = [];
-        actualizarStats();
-        registrar(sprintf('Practica iniciada: %d letras.', prac.n));
-        siguienteLetra();
-    end
-
-    function siguienteLetra()
-        stop(tmr);
-        if ~prac.activa, return; end
-        if prac.k >= prac.n
-            terminarPractica();
-            return;
-        end
-        prac.k = prac.k + 1;
-        letras = 'a':'z';
-        prac.obj = letras(randi(numel(letras)));
-        if chkPista.Value, cmd = "H"; else, cmd = "P"; end
-        enviar(cmd + string(prac.obj));
-        lblObj.Text = upper(prac.obj);
-        lblObj.FontColor = [0 0 0];
-        lblStats.Text = sprintf('Letra %d de %d  -  escribela en el teclado', prac.k, prac.n);
-        hablar(['Letra ' prac.obj]);
-    end
-
-    function resultado(ok, tecleada)
-        if ~prac.activa, return; end
-        prac.res(end + 1) = ok;
-        if ok
-            lblObj.FontColor = [0 0.6 0];
-            registrar(sprintf('Correcto: %s', upper(prac.obj)));
-            hablar('Correcto');
-        else
-            lblObj.FontColor = [0.8 0 0];
-            registrar(sprintf('Incorrecto: se pidio %s, escribio %s', ...
-                              upper(prac.obj), upper(tecleada)));
-            hablar('Incorrecto');
-        end
-        actualizarStats();
-        start(tmr);                 % siguiente letra tras la pausa
-    end
-
-    function actualizarStats()
-        h = sum(prac.res == 1);
-        e = sum(prac.res == 0);
-        acc = 100 * h / max(1, h + e);
-        lblStats.Text = sprintf('Aciertos: %d   Errores: %d   Precision: %.0f %%', h, e, acc);
-        cla(ax);
-        if ~isempty(prac.res)
-            v = prac.res;
-            plot(ax, 1:numel(v), 100 * cumsum(v) ./ (1:numel(v)), '-o', 'LineWidth', 1.5);
-        end
-        ylim(ax, [0 100]);
-    end
-
-    function terminarPractica()
-        prac.activa = false;
-        h = sum(prac.res == 1);
-        e = sum(prac.res == 0);
-        acc = 100 * h / max(1, h + e);
-        lblObj.Text = char(10003);
-        lblObj.FontColor = [0 0.4 0.8];
-        actualizarStats();
-        registrar(sprintf('Practica terminada. Aciertos %d, errores %d, precision %.0f %%', h, e, acc));
-        hablar(sprintf('Practica terminada. Precision %.0f por ciento', acc));
-    end
-
-    function detenerPractica()
-        stop(tmr);
-        if prac.activa
-            prac.activa = false;
-            registrar('Practica detenida.');
-        end
-        lblObj.Text = '-';
     end
 
 
@@ -453,7 +343,6 @@ function braille_gui()
     end
 
     function cerrar(~, ~)
-        try, stop(tmr); delete(tmr); catch, end
         if ~isempty(s)
             try, configureCallback(s, "off"); catch, end
             delete(s);
