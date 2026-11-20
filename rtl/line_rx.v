@@ -4,7 +4,7 @@
 // Formato:  <CMD><datos opcionales>'\n'   ('\r' tambien termina)
 //
 //   - El primer byte de la linea es el comando.
-//   - Los datos de los comandos 'R', 'P' y 'H' se escriben en
+//   - Los datos de los comandos 'R' y 'L' se escriben en
 //     char_buffer (maximo MAX_LEN caracteres).
 //   - Si llegan mas de MAX_LEN datos se marca overflow.
 //   - Las lineas vacias (p. ej. el '\n' de un "\r\n") se ignoran.
@@ -43,7 +43,7 @@ module line_rx #(
     reg have_cmd;
 
     wire is_term   = (rx_data == LF) || (rx_data == CR);
-    wire store_cmd = (cmd == "R") || (cmd == "P") || (cmd == "H");
+    wire store_cmd = (cmd == "R") || (cmd == "L");
     wire accept    = rx_valid && !line_ready;
 
     // Escribe el dato en el buffer si cabe

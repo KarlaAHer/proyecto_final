@@ -10,7 +10,9 @@ function braille_gui()
 %  Esta ventana solo:
 %     - escucha el puerto serial y muestra lo que reporta la FPGA,
 %     - lo dice en voz alta (Windows),
-%     - en modo lectura, envia la palabra que escribes.
+%     - en modo lectura, envia la palabra que escribes,
+%     - en modo practica, le dice a la FPGA cuantas letras quieres
+%       (la FPGA elige las letras, compara, cuenta y termina la sesion).
 %
 %  Uso:  braille_gui     (MATLAB R2019b o mas nuevo, sin toolboxes)
 %  Protocolo: ver rtl/braille_controller.v
@@ -25,6 +27,9 @@ function braille_gui()
     texto  = '';           % escritura
     palabraW = '';
     histAcc   = [];           % precision tras cada intento (practica)
+    modoAct   = 'I';          % modo que reporto la FPGA
+    nLetras   = 10;           % letras por sesion (lo cuenta la FPGA)
+    intentos  = 0;            % intentos hechos en la sesion
 
     % ---------------- Ventana ----------------
     fig = uifigure('Name', 'Braille FPGA', 'Position', [100 80 900 640]);
@@ -94,22 +99,28 @@ function braille_gui()
     % --- Practica ---
     pP = uipanel(area, 'BorderType', 'none');
     pP.Layout.Row = 1; pP.Layout.Column = 1;
-    gP = uigridlayout(pP, [3 2]);
-    gP.RowHeight   = {30, '1x', 34};
+    gP = uigridlayout(pP, [4 2]);
+    gP.RowHeight   = {32, 30, '1x', 34};
     gP.ColumnWidth = {'1x', '1x'};
+    gN = uigridlayout(gP, [1 3]);
+    gN.ColumnWidth = {'fit', 70, '1x'}; gN.Padding = [0 0 0 0];
+    uilabel(gN, 'Text', 'Letras por sesion:', 'FontSize', 15);
+    spnN = uispinner(gN, 'Limits', [0 99], 'Value', 10, 'FontSize', 15, ...
+                     'RoundFractionalValues', 'on', 'ValueChangedFcn', @cambiarN);
+    uilabel(gN, 'Text', '(0 = sin limite)', 'FontColor', [0.4 0.4 0.4]);
     lblRes = uilabel(gP, 'Text', 'La FPGA elige la letra. KEY1 (NEXT) = saltar. SW2 = pista', ...
                      'FontSize', 15, 'HorizontalAlignment', 'center');
-    lblRes.Layout.Column = 1;
+    lblRes.Layout.Row = 2; lblRes.Layout.Column = 1;
     ax = uiaxes(gP);
-    ax.Layout.Row = [1 3]; ax.Layout.Column = 2;
+    ax.Layout.Row = [1 4]; ax.Layout.Column = 2;
     title(ax, 'Precision acumulada'); ylabel(ax, '%'); xlabel(ax, 'Intento');
     ylim(ax, [0 100]); grid(ax, 'on');
     lblObj = uilabel(gP, 'Text', '-', 'FontSize', 150, 'FontWeight', 'bold', ...
                      'HorizontalAlignment', 'center');
-    lblObj.Layout.Row = 2; lblObj.Layout.Column = 1;
+    lblObj.Layout.Row = 3; lblObj.Layout.Column = 1;
     lblStats = uilabel(gP, 'Text', 'Aciertos: 0   Errores: 0   Precision: 0 %', ...
                        'FontSize', 17, 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
-    lblStats.Layout.Row = 3; lblStats.Layout.Column = 1;
+    lblStats.Layout.Row = 4; lblStats.Layout.Column = 1;
 
     % Fila 4: registro
     taLog = uitextarea(g, 'Editable', 'off', 'FontName', 'Consolas', 'Value', {''});
@@ -186,8 +197,11 @@ function braille_gui()
 
             case 'M'                                     % modo (switches)
                 mostrarModo(c2);
-                registrar(['La tarjeta cambio a modo ' nombreModo(c2)]);
+                registrar(['La tarjeta esta en modo ' nombreModo(c2)]);
                 hablar(['Modo ' lower(nombreModo(c2))]);
+                if c2 == 'P'
+                    enviarN();          % sesion nueva: decirle cuantas letras
+                end
 
             case 'D'                                     % lectura
                 lblLetra.Text = upper(c2);
@@ -205,7 +219,12 @@ function braille_gui()
             case 'T'                                     % practica: letra nueva
                 lblObj.Text = upper(c2);
                 lblObj.FontColor = [0 0 0];
-                lblRes.Text = 'Escribe esta letra en el teclado Braille';
+                if nLetras > 0
+                    lblRes.Text = sprintf('Letra %d de %d: escribela en el teclado', ...
+                                          intentos + 1, nLetras);
+                else
+                    lblRes.Text = 'Escribe esta letra en el teclado Braille';
+                end
                 hablar(['Letra ' c2]);
 
             case {'O', 'X'}                              % practica: resultado
@@ -213,6 +232,7 @@ function braille_gui()
                 h  = hex2dec(char(m(3:4)));
                 e  = hex2dec(char(m(5:6)));
                 acc = 100 * h / max(1, h + e);
+                intentos = h + e;
                 histAcc(end + 1) = acc;
                 if ok
                     lblObj.FontColor = [0 0.6 0];
@@ -227,6 +247,25 @@ function braille_gui()
                 plot(ax, 1:numel(histAcc), histAcc, '-o', 'LineWidth', 1.5);
                 ylim(ax, [0 100]); grid(ax, 'on');
                 registrar(sprintf('%s  (aciertos %d, errores %d)', lblRes.Text, h, e));
+
+            case 'F'                                     % practica: fin de sesion
+                h   = hex2dec(char(m(2:3)));
+                e   = hex2dec(char(m(4:5)));
+                acc = 100 * h / max(1, h + e);
+                lblObj.Text = char(10003);
+                lblObj.FontColor = [0 0.4 0.8];
+                lblRes.Text = 'Sesion terminada.  KEY1 (NEXT) = otra sesion';
+                lblStats.Text = sprintf('FINAL  -  Aciertos: %d   Errores: %d   Precision: %.0f %%', h, e, acc);
+                registrar(sprintf('Sesion terminada: aciertos %d, errores %d, precision %.0f %%', h, e, acc));
+                hablar(sprintf('Practica terminada. %d aciertos, %d errores. Precision %.0f por ciento', h, e, acc));
+
+            case 'L'                                     % letras por sesion
+                nLetras = hex2dec(char(m(2:3)));
+                if nLetras == 0
+                    registrar('Practica sin limite de letras.');
+                else
+                    registrar(sprintf('La FPGA hara %d letras por sesion.', nLetras));
+                end
 
             case 'S'
                 if numel(m) >= 5
@@ -248,6 +287,7 @@ function braille_gui()
 
     % Muestra el panel del modo que reporto la FPGA
     function mostrarModo(m)
+        modoAct = m;
         pI.Visible = (m == 'I');
         pR.Visible = (m == 'R');
         pW.Visible = (m == 'W');
@@ -258,6 +298,7 @@ function braille_gui()
                 lblLetra.Text = '-';
             case 'P'                                    % la FPGA borra el marcador
                 histAcc = [];
+                intentos = 0;
                 cla(ax); ylim(ax, [0 100]); grid(ax, 'on');
                 lblObj.Text = '-';
                 lblStats.Text = 'Aciertos: 0   Errores: 0   Precision: 0 %';
@@ -270,6 +311,23 @@ function braille_gui()
             case 'W', n = 'ESCRITURA';
             case 'P', n = 'PRACTICA';
             otherwise, n = 'REPOSO';
+        end
+    end
+
+
+    %% =================================================================
+    %  PRACTICA: MATLAB solo le dice a la FPGA cuantas letras
+    %  =================================================================
+    function enviarN()
+        nLetras = spnN.Value;
+        enviar("L" + string(spnN.Value));
+    end
+
+    % Si cambias el numero durante la practica, se aplica de inmediato;
+    % si no, se manda al entrar al modo practica.
+    function cambiarN(~, ~)
+        if ~isempty(s) && modoAct == 'P'
+            enviarN();
         end
     end
 

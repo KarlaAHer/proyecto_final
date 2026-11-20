@@ -20,6 +20,8 @@
 //   PC -> FPGA
 //     R<texto>  carga palabra (1..MAX_LEN) y muestra el 1er caracter
 //               (solo en modo LECTURA; en otro modo responde !M)
+//     L<n>      letras por sesion de practica, n = 0..99 en decimal
+//               (0 = sin limite). Es solo un ajuste: responde L<hh>
 //     Q         consulta el modo actual (responde M<m>)
 //     S         consulta el marcador
 //     C         borra el marcador
@@ -35,6 +37,8 @@
 //     T<c>          practica: nueva letra objetivo c
 //     O<c><hh><mm>  practica: ACIERTO, c = tecleado, hh/mm = aciertos/errores (hex)
 //     X<c><hh><mm>  practica: ERROR
+//     F<hh><mm>     practica: sesion terminada (resultado final)
+//     L<hh>         letras por sesion configuradas (hex)
 //     S<hh><mm>     marcador
 //     !L / !U / !M  error: palabra muy larga / comando no soportado /
 //                   la tarjeta no esta en modo lectura
@@ -44,6 +48,8 @@
 //   - Tras cada intento la celda muestra el patron correcto durante
 //     FEEDBACK_DELAY ciclos y luego se elige otra letra sola.
 //   - NEXT salta a otra letra sin contar el intento.
+//   - Si hay limite (L<n>), al completar n intentos se manda F<hh><mm>
+//     y se espera; NEXT empieza otra sesion (manda MP y una letra).
 //====================================================
 
 module braille_controller #(
@@ -104,6 +110,7 @@ module braille_controller #(
     localparam ST_TARGET = 3'd3;
     localparam ST_SEND   = 3'd4;
     localparam ST_GAP    = 3'd5;
+    localparam ST_LDIG2  = 3'd6;
 
     reg [2:0] state;
 
@@ -124,6 +131,11 @@ module braille_controller #(
     reg          need_target;   // pedir una letra nueva
     reg          fb_wait;       // mostrando retroalimentacion
     reg [FB_WIDTH-1:0] fb_cnt;
+    reg [7:0]    rounds_cfg;    // letras por sesion (0 = sin limite)
+    reg          last_try;      // el intento actual completa la sesion
+    reg          need_final;    // mandar resultado final
+    reg          sess_done;     // sesion terminada, esperando NEXT
+    reg [3:0]    dig0;          // primer digito de L<n>
 
     reg          chord_pend;
     reg [5:0]    chord_reg;
@@ -178,7 +190,13 @@ module braille_controller #(
         .char_valid(typed_valid)
     );
 
-    assign buf_raddr = char_idx;
+    // L<n> lee buffer[0] en ST_CMD y buffer[1] en ST_LDIG2
+    assign buf_raddr = (state == ST_CMD && cmd_r == "L") ? {AW{1'b0}} :
+                       (state == ST_LDIG2)               ? {{(AW-1){1'b0}}, 1'b1} :
+                                                           char_idx;
+    wire       is_digit  = (buf_rdata >= "0") && (buf_rdata <= "9");
+    wire [3:0] digit_val = buf_rdata[3:0];
+    wire [7:0] total_new = hits + misses + 1'b1;
 
 
     //====================================================
@@ -237,6 +255,11 @@ module braille_controller #(
             need_target  <= 1'b0;
             fb_wait      <= 1'b0;
             fb_cnt       <= 0;
+            rounds_cfg   <= 8'd10;
+            last_try     <= 1'b0;
+            need_final   <= 1'b0;
+            sess_done    <= 1'b0;
+            dig0         <= 4'd0;
             chord_pend   <= 1'b0;
             chord_reg    <= 6'b000000;
             next_pend    <= 1'b0;
@@ -260,8 +283,11 @@ module braille_controller #(
             // Temporizador de retroalimentacion en practica
             if (fb_wait) begin
                 if (fb_cnt == FEEDBACK_DELAY - 1) begin
-                    fb_wait     <= 1'b0;
-                    need_target <= 1'b1;
+                    fb_wait <= 1'b0;
+                    if (last_try)
+                        need_final  <= 1'b1;   // fin de la sesion
+                    else
+                        need_target <= 1'b1;   // siguiente letra
                 end
                 else
                     fb_cnt <= fb_cnt + 1'b1;
@@ -294,6 +320,9 @@ module braille_controller #(
                         word_len     <= 0;
                         target_valid <= 1'b0;
                         fb_wait      <= 1'b0;
+                        last_try     <= 1'b0;
+                        need_final   <= 1'b0;
+                        sess_done    <= 1'b0;
                         chord_pend   <= 1'b0;
                         next_pend    <= 1'b0;
                         if (sw_mode == MODE_PRACT) begin
@@ -308,7 +337,18 @@ module braille_controller #(
                         state    <= ST_SEND;
                     end
 
-                    else if (need_target && mode == MODE_PRACT) begin
+                    else if (need_final && mode == MODE_PRACT) begin
+                        // 3a) Sesion terminada: resultado final
+                        need_final <= 1'b0;
+                        last_try   <= 1'b0;
+                        sess_done  <= 1'b1;
+                        msg_data   <= {8'd0, hexc(misses[3:0]), hexc(misses[7:4]),
+                                       hexc(hits[3:0]), hexc(hits[7:4]), "F"};
+                        msg_len    <= 3'd5;
+                        state      <= ST_SEND;
+                    end
+
+                    else if (need_target && mode == MODE_PRACT && !sess_done) begin
                         // 3) Nueva letra de practica (aleatoria)
                         need_target <= 1'b0;
                         target      <= new_char;
@@ -331,6 +371,8 @@ module braille_controller #(
                             target_valid <= 1'b0;
                             fb_wait      <= 1'b1;     // mostrar respuesta
                             fb_cnt       <= 0;
+                            last_try     <= (rounds_cfg != 0) &&
+                                            (total_new >= rounds_cfg);
                             msg_len      <= 3'd6;
                             if (is_hit) begin
                                 hits     <= hits_inc;
@@ -378,10 +420,21 @@ module braille_controller #(
                         end
 
                         else if (mode == MODE_PRACT) begin
-                            // Saltar letra
-                            target_valid <= 1'b0;
-                            fb_wait      <= 1'b0;
-                            need_target  <= 1'b1;
+                            if (sess_done) begin
+                                // Nueva sesion
+                                sess_done   <= 1'b0;
+                                hits        <= 8'd0;
+                                misses      <= 8'd0;
+                                need_target <= 1'b1;
+                                msg_data    <= {32'd0, "P", "M"};
+                                msg_len     <= 3'd2;
+                                state       <= ST_SEND;
+                            end
+                            else if (!fb_wait) begin
+                                // Saltar letra (no cuenta)
+                                target_valid <= 1'b0;
+                                need_target  <= 1'b1;
+                            end
                         end
                     end
 
@@ -423,6 +476,22 @@ module braille_controller #(
                             state     <= ST_IDLE;  // sin respuesta propia
                         end
 
+                        "L": begin
+                            if (len_r == 0 || len_r > 2 || !is_digit) begin
+                                msg_data <= {32'd0, "U", "!"};
+                                msg_len  <= 3'd2;
+                            end
+                            else if (len_r == 1) begin
+                                rounds_cfg <= {4'd0, digit_val};
+                                msg_data   <= {24'd0, hexc(digit_val), "0", "L"};
+                                msg_len    <= 3'd3;
+                            end
+                            else begin
+                                dig0  <= digit_val;
+                                state <= ST_LDIG2;     // leer el 2o digito
+                            end
+                        end
+
                         "Q": begin
                             msg_data <= {32'd0, mode_char(mode), "M"};
                             msg_len  <= 3'd2;
@@ -448,6 +517,25 @@ module braille_controller #(
 
                     endcase
 
+                end
+
+
+                //============================================
+                // LDIG2: segundo digito de L<n> (buffer[1])
+                //============================================
+                ST_LDIG2: begin
+                    if (is_digit) begin
+                        rounds_cfg <= dig0 * 8'd10 + digit_val;
+                        msg_data   <= {24'd0,
+                                       hexc((dig0 * 8'd10 + digit_val) & 8'h0F),
+                                       hexc((dig0 * 8'd10 + digit_val) >> 4), "L"};
+                        msg_len    <= 3'd3;
+                    end
+                    else begin
+                        msg_data <= {32'd0, "U", "!"};
+                        msg_len  <= 3'd2;
+                    end
+                    state <= ST_SEND;
                 end
 
 

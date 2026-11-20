@@ -51,6 +51,7 @@ The PC never changes the mode; it only displays, speaks and sends the reading te
 | PC → FPGA | Meaning | Reply |
 |---|---|---|
 | `R<text>` | Load a word (1–16 chars), only in reading mode | `D<c>` (`!L` too long, `!M` not in reading mode) |
+| `L<n>` | Letters per practice session, n = 0–99 (0 = unlimited); a setting only | `L<hh>` |
 | `Q` | Query the current mode | `M<m>` |
 | `S` / `C` | Read / clear the score | `S<hh><mm>` |
 | `N` | Software NEXT (testing) | depends on the mode |
@@ -62,6 +63,8 @@ The PC never changes the mode; it only displays, speaks and sends the reading te
 | `K<c>` | Writing: typed character (`?` = invalid pattern, space = NEXT) |
 | `T<c>` | Practice: new random target letter |
 | `O<c><hh><mm>` / `X<c><hh><mm>` | Practice: hit / miss + counters (hex) |
+| `F<hh><mm>` | Practice: session finished after n letters (final score); NEXT starts a new one |
+| `L<hh>` | Letters per session that were configured |
 | `!L` `!U` `!M` | Too long / unsupported command / not in reading mode |
 
 ## Hardware notes

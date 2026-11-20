@@ -341,6 +341,24 @@ module braille_top_tb;
         SW[1:0] = 2'b11;       expect_line("MP");     // sesion nueva
         get_target(tgt);
         send_line("S");        expect_line("S0000");  // marcador borrado
+
+        $display("\n== PRACTICA CON NUMERO DE LETRAS (L<n>) ==");
+        send_line("L2");       expect_line("L02");    // 2 letras por sesion
+        pat = dut.CTRL0.lut_pattern;
+        press_chord(pat);       expect_line({"O", tgt, "0100"});
+        get_target(tgt);
+        pat = dut.CTRL0.lut_pattern;
+        press_chord(pat);       expect_line({"O", tgt, "0200"});
+        expect_line("F0200");                          // fin de sesion
+        expect_cell(6'b000000);
+        press_chord(pat);       expect_silence;       // ya no acepta intentos
+        press_next;             expect_line("MP");     // NEXT = otra sesion
+        get_target(tgt);
+        send_line("S");        expect_line("S0000");
+        send_line("L12");      expect_line("L0C");    // 12 letras
+        send_line("L0");       expect_line("L00");    // sin limite
+        send_line("L1x");      expect_line("!U");
+        send_line("L123");     expect_line("!U");
         SW[1:0] = 2'b01;       expect_line("MR");
         send_line("Q");        expect_line("MR");
         send_line("W");        expect_line("!U");     // el PC ya no cambia modos
