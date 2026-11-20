@@ -22,6 +22,7 @@
 //     N         equivale a presionar el boton NEXT
 //     S         consulta el marcador
 //     C         borra el marcador
+//     Q         consulta el modo actual (responde M<m>)
 //
 //   FPGA -> PC
 //     D<c>          lectura: se esta mostrando el caracter c
@@ -33,7 +34,7 @@
 //     X<c><hh><mm>  practica: ERROR
 //     N             practica: el usuario pide la siguiente letra (NEXT)
 //     S<hh><mm>     marcador
-//     M<m>          cambio de modo (m = R, W o P)
+//     M<m>          cambio de modo por el switch, o respuesta a Q (m = R, W o P)
 //     !L / !U / !T  error: palabra muy larga / comando o caracter no
 //                   soportado / no hay objetivo de practica
 //====================================================
@@ -395,6 +396,11 @@ module braille_controller #(
                             msg_data <= {8'd0, hexc(misses[3:0]), hexc(misses[7:4]),
                                          hexc(hits[3:0]), hexc(hits[7:4]), "S"};
                             msg_len  <= 3'd5;
+                        end
+
+                        "Q": begin
+                            msg_data <= {32'd0, mode_char(mode), "M"};
+                            msg_len  <= 3'd2;
                         end
 
                         "C": begin

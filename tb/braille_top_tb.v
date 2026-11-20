@@ -298,6 +298,7 @@ module braille_top_tb;
         send_line("Pb");       expect_line("Tb");     // el PC sigue mandando
         SW[1:0] = 2'b01;       expect_line("MR");
         press_chord(6'b000001); expect_silence;       // lectura ignora acordes
+        send_line("Q");        expect_line("MR");     // consulta de modo
         send_line("Z");        expect_line("!U");
         UART_RX = 1'b1;
         send_byte(8'h0D); send_byte(8'h0A);           // lineas vacias

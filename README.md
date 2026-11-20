@@ -8,7 +8,8 @@ The FPGA is the local controller. It talks to the PC/MATLAB over **UART at 9600 
 |---|---|
 | `rtl/` | Synthesizable Verilog (top: `braille_top`) |
 | `tb/` | Testbenches (`braille_top_tb.v` = full system, 3 modes) |
-| `matlab/braille_app.m` | MATLAB interface: menu, 3 modes, score plot, text-to-speech |
+| `matlab/braille_gui.m` | **MATLAB GUI (recommended):** listens to the serial port in the background, so changing the mode on the board switches the GUI automatically |
+| `matlab/braille_app.m` | Simple console version (menu); does not react to the board's mode switch |
 | `quartus/` | DE10-Lite pin assignments (`pins_de10lite.tcl`) and `.sdc` |
 | `legacy/` | Previous packet-based modules (0xAA + checksum), kept for reference only |
 
@@ -57,6 +58,7 @@ Select a mode with a PC command or with `SW[1:0]` (`01` reading, `10` writing, `
 | `N` | Software NEXT | depends on the mode |
 | `S` | Read the score | `S<hh><mm>` (hex) |
 | `C` | Clear the score | `S0000` |
+| `Q` | Query the current mode | `M<m>` |
 
 | FPGA → PC | Meaning |
 |---|---|
