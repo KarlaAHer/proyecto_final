@@ -9,6 +9,7 @@ The FPGA is the local controller. It talks to the PC/MATLAB over **UART at 9600 
 | `rtl/` | Synthesizable Verilog (top: `braille_top`) |
 | `tb/` | Testbenches (`braille_top_tb.v` = full system, 3 modes) |
 | `matlab/braille_gui.m` | MATLAB display: passive window that shows/speaks what the FPGA reports; it only sends the word in reading mode |
+| `app_inventor/BrailleFPGA.aia` | Android app (MIT App Inventor) over the HC-05: same passive display as MATLAB, with voice and an accuracy chart. `gen_aia.py` regenerates it |
 | `quartus/` | DE10-Lite pin assignments (`pins_de10lite.tcl`) and `.sdc` |
 | `legacy/` | Previous packet-based modules (0xAA + checksum), kept for reference only |
 
