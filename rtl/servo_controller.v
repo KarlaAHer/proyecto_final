@@ -10,8 +10,7 @@
 //     PULSE_DOWN_L / PULSE_UP_L
 //   - Columna derecha  (puntos 4,5,6 = SERVO[3..5]) usa
 //     PULSE_DOWN_R / PULSE_UP_R
-// Para un espejo exacto respecto al centro del servo (1.5 ms):
-//     PULSE_R = 150000 - PULSE_L
+// Valores calibrados en la celda real (servo_cal_top).
 //
 // El patron se registra solo al inicio de cada periodo para
 // que ningun pulso salga recortado a la mitad.
@@ -23,9 +22,9 @@
 module servo_controller #(
     parameter PERIOD        = 1000000,   // 20 ms
     parameter PULSE_DOWN_L  = 70000,     // 1.400 ms
-    parameter PULSE_UP_L    = 83056,     // 1.661 ms
-    parameter PULSE_DOWN_R  = 80000,     // 1.600 ms (espejo de 1.400)
-    parameter PULSE_UP_R    = 66944,     // 1.339 ms (espejo de 1.661)
+    parameter PULSE_UP_L    = 82000,     // 1.64 ms
+    parameter PULSE_DOWN_R  = 80000,     // 1.60 ms
+    parameter PULSE_UP_R    = 60000,     // 1.20 ms
     parameter COUNTER_WIDTH = 20
 )(
     input  wire       clk,
