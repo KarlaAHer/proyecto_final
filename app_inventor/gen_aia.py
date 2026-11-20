@@ -40,8 +40,8 @@ comps=[
    lbl("LblInfoP","La FPGA elige la letra. KEY1 = saltar. SW2 = pista",TextAlignment="1"),
    lbl("LblObjetivo","-",FontSize="120",FontBold="True",TextAlignment="1"),
    lbl("LblStats","Aciertos: 0   Errores: 0   Precision: 0 %",FontSize="16",FontBold="True",TextAlignment="1"),
-   C("Chart","Chart1",1,dict(Width=FILL,Height="200",Description="Precision acumulada (%)"),
-     [C("ChartData2D","ChartData2D1",1,dict(Label="Precision %"))]),
+   lbl("LblGraf","Precision acumulada (arriba = 100 %, abajo = 0 %)",FontSize="12",TextAlignment="1"),
+   C("Canvas","Canvas1",10,dict(Width=FILL,Height="200",BackgroundColor="&HFFF4F4F4",LineWidth="4",PaintColor="&HFF2A6FDB")),
  ],Visible="False"),
  lbl("LblLog","",FontSize="12",TextColor="&HFF666666"),
  C("BluetoothClient","BluetoothClient1",5,dict(DelimiterByte="10",CharacterEncoding="ISO-8859-1")),
@@ -124,6 +124,8 @@ def put(b): blocks.append(b)
 put(gdecl("intentos",num(0),0,0))
 put(gdecl("nLetras",num(10),0,40))
 put(gdecl("palabraW",txt(""),0,80))
+put(gdecl("px",num(-1),250,0))
+put(gdecl("py",num(0),250,40))
 
 # Conexion
 put(event("LPConectar","BeforePicking",[pset("LPConectar","Elements",pget("BluetoothClient1","AddressesAndNames"))],0,140))
@@ -186,7 +188,7 @@ put(proc("mostrarModo",["m"],[
        (M("W"),[pset("LblModo","Text",txt("MODO: ESCRITURA"))]),
        (M("P"),[pset("LblModo","Text",txt("MODO: PRACTICA")),
                 gset("global intentos",num(0)),
-                call("ChartData2D1","Clear"),
+                pcall("grafReset",[],[]),
                 pset("LblObjetivo","Text",txt("-")),
                 pset("LblStats","Text",txt("Aciertos: 0   Errores: 0   Precision: 0 %")),
                 gset("global nLetras",pget("TxtN","Text")),
@@ -218,7 +220,7 @@ put(proc("resultado",["linea"],[
            pset("LblInfoP","Text",join(txt("Incorrecto: escribiste "),upc(seg(L("linea"),2,1)))),
            hablar(txt("Incorrecto"))]),
       pset("LblStats","Text",join(txt("Aciertos: "),L("h"),txt("   Errores: "),L("e"),txt("   Precision: "),L("acc"),txt(" %"))),
-      call("ChartData2D1","AddEntry",L("global intentos"),L("acc")),
+      pcall("grafPunto",["n","acc"],[L("global intentos"),L("acc")]),
     ])
   ])],1100,0))
 # Practica: fin
@@ -232,6 +234,22 @@ put(proc("finSesion",["linea"],[
       hablar(join(txt("Practica terminada. Precision "),L("acc"),txt(" por ciento"))),
     ])
   ])],1100,600))
+# Grafica en Canvas (sin librerias externas)
+put(proc("grafReset",[],[
+  call("Canvas1","Clear"),
+  gset("global px",num(-1)),
+  gset("global py",num(0))],1700,0))
+put(proc("grafPunto",["n","acc"],[
+  local([("x",div(mul(L("n"),pget("Canvas1","Width")),
+                  choose(eq(L("global nLetras"),num(0)),num(30),add(L("global nLetras"),num(1))))),
+         ("y",add(pget("Canvas1","Height"),
+                  mul(num(-1),div(mul(L("acc"),pget("Canvas1","Height")),num(100)))))],[
+    ifs([(mcmp("GTE",L("global px"),num(0)),
+          [call("Canvas1","DrawLine",L("global px"),L("global py"),L("x"),L("y"))])]),
+    call("Canvas1","DrawLine",add(L("x"),num(-6)),L("y"),add(L("x"),num(6)),L("y")),
+    call("Canvas1","DrawLine",L("x"),add(L("y"),num(-6)),L("x"),add(L("y"),num(6))),
+    gset("global px",L("x")),
+    gset("global py",L("y"))])],1700,200))
 # Voz
 put(proc("hablar",["txt"],[
   ifs([(land(pget("ChkVoz","Checked"),mcmp("GT",tlen(L("txt")),num(0))),
