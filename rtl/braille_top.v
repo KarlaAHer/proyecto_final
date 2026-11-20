@@ -25,8 +25,11 @@ module braille_top #(
     parameter DEBOUNCE_COUNT = 500000,    // 10 ms
     parameter DEB_WIDTH      = 19,
     parameter SERVO_PERIOD   = 1000000,   // 20 ms
-    parameter PULSE_DOWN     = 70000,     // 1.40 ms
-    parameter PULSE_UP       = 82500,     // 1.65 ms
+    // Servos izquierda (puntos 1,2,3) y derecha (4,5,6, en espejo)
+    parameter PULSE_DOWN_L   = 70000,     // 1.400 ms
+    parameter PULSE_UP_L     = 83056,     // 1.661 ms (+2 grados)
+    parameter PULSE_DOWN_R   = 80000,     // 1.600 ms = 150000 - 70000
+    parameter PULSE_UP_R     = 66944,     // 1.339 ms = 150000 - 83056
     parameter SERVO_WIDTH    = 20,
     parameter MAX_LEN        = 16,
     parameter AW             = 4
@@ -217,8 +220,10 @@ module braille_top #(
 
     servo_controller #(
         .PERIOD       (SERVO_PERIOD),
-        .PULSE_DOWN   (PULSE_DOWN),
-        .PULSE_UP     (PULSE_UP),
+        .PULSE_DOWN_L (PULSE_DOWN_L),
+        .PULSE_UP_L   (PULSE_UP_L),
+        .PULSE_DOWN_R (PULSE_DOWN_R),
+        .PULSE_UP_R   (PULSE_UP_R),
         .COUNTER_WIDTH(SERVO_WIDTH)
     ) SERVO0 (
         .clk            (clk),

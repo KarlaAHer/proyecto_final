@@ -74,7 +74,7 @@ Everything is printable ASCII, so you can test from any serial terminal before u
 * Default GPIO header wiring: see `quartus/pins_de10lite.tcl` (verify against the DE10-Lite manual).
 * The buttons connect to GND and use the FPGA's internal pull-ups.
 * Power the servos from an **external 5 V supply** with a common GND. The 3.3 V PWM signal drives SG90 servos without problems.
-* `PULSE_DOWN` / `PULSE_UP` (1.40 / 1.65 ms) are parameters of `braille_top`. Adjust them to suit the cell's mechanism.
+* Servo pulse widths are parameters of `braille_top`: left column (dots 1–3) `PULSE_DOWN_L`/`PULSE_UP_L` = 1.400/1.661 ms; right column (dots 4–6) is mirrored, `PULSE_DOWN_R`/`PULSE_UP_R` = 1.600/1.339 ms (150000 − left value). 278 counts ≈ 1°.
 * **HC-05:** configure it for 9600 baud (AT+UART=9600,0,0), and use 3.3 V logic or a divider on its RX pin. In MATLAB, only `PORT` changes.
 
 ## Simulation

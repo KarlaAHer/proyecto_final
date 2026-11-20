@@ -15,8 +15,10 @@ module braille_top_tb;
     localparam CPB    = 16;
     localparam DEB    = 20;
     localparam PERIOD = 400;
-    localparam P_DOWN = 20;
+    localparam P_DOWN = 20;    // izquierda
     localparam P_UP   = 40;
+    localparam R_DOWN = 35;    // derecha (espejo)
+    localparam R_UP   = 15;
 
     reg        clk = 0;
     reg  [1:0] KEY = 2'b10;   // reset activo
@@ -35,8 +37,10 @@ module braille_top_tb;
         .DEBOUNCE_COUNT(DEB),
         .DEB_WIDTH     (8),
         .SERVO_PERIOD  (PERIOD),
-        .PULSE_DOWN    (P_DOWN),
-        .PULSE_UP      (P_UP),
+        .PULSE_DOWN_L  (P_DOWN),
+        .PULSE_UP_L    (P_UP),
+        .PULSE_DOWN_R  (R_DOWN),
+        .PULSE_UP_R    (R_UP),
         .SERVO_WIDTH   (10)
     ) dut (
         .CLOCK_50(clk), .KEY(KEY), .SW(SW),
@@ -204,8 +208,9 @@ module braille_top_tb;
                 @(posedge clk);
             end
             for (i = 0; i < 6; i = i + 1) begin
-                got[i] = (width[i] == P_UP);
-                if (width[i] != P_UP && width[i] != P_DOWN) begin
+                got[i] = (i < 3) ? (width[i] == P_UP) : (width[i] == R_UP);
+                if ((i < 3 && width[i] != P_UP && width[i] != P_DOWN) ||
+                    (i >= 3 && width[i] != R_UP && width[i] != R_DOWN)) begin
                     $display("FALLA: ancho de pulso invalido en servo %0d: %0d", i, width[i]);
                     errors = errors + 1;
                 end
