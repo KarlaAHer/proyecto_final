@@ -8,9 +8,9 @@
 
 module servo_cal_top #(
     parameter PULSE_DOWN_L = 70000,   // <-- IZQUIERDA abajo
-    parameter PULSE_UP_L   = 83056,   // <-- IZQUIERDA arriba
+    parameter PULSE_UP_L   = 86000,   // <-- IZQUIERDA arriba
     parameter PULSE_DOWN_R = 80000,   // <-- DERECHA abajo
-    parameter PULSE_UP_R   = 66944    // <-- DERECHA arriba
+    parameter PULSE_UP_R   = 64000    // <-- DERECHA arriba
 )(
     input  wire       CLOCK_50,
     input  wire [1:0] SW,
