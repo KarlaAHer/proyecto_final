@@ -21,10 +21,10 @@
 
 module servo_controller #(
     parameter PERIOD        = 1000000,   // 20 ms
-    parameter PULSE_DOWN_L  = 82000,     // 1.64 ms
-    parameter PULSE_UP_L    = 70000,     // 1.40 ms
-    parameter PULSE_DOWN_R  = 60000,     // 1.20 ms
-    parameter PULSE_UP_R    = 80000,     // 1.60 ms
+    parameter PULSE_DOWN_L  = 70000,     // 1.40 ms
+    parameter PULSE_UP_L    = 58000,     // 1.16 ms
+    parameter PULSE_DOWN_R  = 80000,     // 1.60 ms
+    parameter PULSE_UP_R    = 100000,    // 2.00 ms
     parameter COUNTER_WIDTH = 20
 )(
     input  wire       clk,

@@ -28,11 +28,12 @@ module braille_top #(
     parameter SERVO_PERIOD   = 1000000,   // 20 ms
     // Servos izquierda (puntos 1,2,3) y derecha (4,5,6, en espejo)
     // Valores calibrados con servo_cal_top
-    // (arriba/abajo intercambiados: los puntos bajaban en vez de subir)
-    parameter PULSE_DOWN_L   = 82000,     // 1.64 ms  izquierda abajo
-    parameter PULSE_UP_L     = 70000,     // 1.40 ms  izquierda arriba
-    parameter PULSE_DOWN_R   = 60000,     // 1.20 ms  derecha abajo
-    parameter PULSE_UP_R     = 80000,     // 1.60 ms  derecha arriba
+    // Abajo = posicion calibrada; arriba = mismo recorrido que en la
+    // calibracion pero en el sentido contrario (izq -12000, der +20000)
+    parameter PULSE_DOWN_L   = 70000,     // 1.40 ms  izquierda abajo (reposo)
+    parameter PULSE_UP_L     = 58000,     // 1.16 ms  izquierda arriba
+    parameter PULSE_DOWN_R   = 80000,     // 1.60 ms  derecha abajo (reposo)
+    parameter PULSE_UP_R     = 100000,    // 2.00 ms  derecha arriba
     parameter SERVO_WIDTH    = 20,
     parameter MAX_LEN        = 16,
     parameter AW             = 4,
